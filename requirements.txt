@@ -5,6 +5,8 @@ streamlit
 pandas
 faiss-cpu
 sentence-transformers
+torch
+torchvision
 python-dotenv
 pypdf
 fpdf2
