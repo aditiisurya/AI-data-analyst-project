@@ -21,17 +21,16 @@ st.markdown("""
     .glass-card { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; padding: 25px; margin-bottom: 20px; }
     .hero-text { background: linear-gradient(90deg, #FF0080 0%, #7928CA 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 44px; font-weight: 800; }
     .metric-tile { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 15px; text-align: center; }
-    .metric-value { font-size: 24px; font-weight: 800; color: #FF0080; }
+    .metric-value { font-size: 24px; font-weight: 800; color: #7928CA; }
     .metric-label { font-size: 11px; text-transform: uppercase; color: rgba(255,255,255,0.6); letter-spacing: 1px; }
-    .pulse-glow { box-shadow: 0 0 15px rgba(255, 0, 128, 0.2); }
 </style>
 """, unsafe_allow_html=True)
 
 def get_system_metrics(dfs_dict, rag_chunks):
     total_rows = sum([len(df) for df in dfs_dict.values()]) if dfs_dict else 0
     total_chunks = len(rag_chunks) if rag_chunks else 0
-    search_engine = "FAISS L2 Optimal" if total_chunks > 0 else "Pandas Normal"
-    return {"rows": total_rows, "chunks": total_chunks, "engine": search_engine}
+    file_count = len(dfs_dict) if dfs_dict else 0
+    return {"rows": total_rows, "chunks": total_chunks, "files": file_count}
 
 # --- MEMORY INITIALIZATION ---
 if "messages" not in st.session_state:
@@ -60,19 +59,32 @@ with st.sidebar:
     if csv_files:
         for f in csv_files:
             dfs_dict[f.name] = pd.read_csv(f)
-        st.success(f"{len(dfs_dict)} Table(s) Loaded")
+        
+        # --- NEW: SIDEBAR DATA INVENTORY (Moved from main) ---
+        st.markdown("---")
+        st.markdown("📊 **Dataset Inventory**")
+        for name, df in dfs_dict.items():
+            st.code(f"{name}\n{df.shape[0]:,} Rows | {df.shape[1]} Cols")
+            if df.isnull().values.any():
+                st.caption("⚠️ Null values detected")
+            else:
+                st.caption("✅ Clean dataset")
+        st.success(f"{len(dfs_dict)} Table(s) Ready")
     
     if kb_file:
         # Only re-index if the file has changed or hasn't been indexed yet
         if "rag_chunks" not in st.session_state or st.session_state.get("last_kb_file") != kb_file.name:
-            with st.spinner("Indexing PDF with FAISS..."):
+            with st.spinner("Indexing PDF..."):
                 st.session_state.rag_chunks = process_knowledge_base(kb_file)
                 st.session_state.rag_index = initialize_faiss_index(st.session_state.rag_chunks)
                 st.session_state.last_kb_file = kb_file.name
         
         # Use session state chunks
         rag_chunks = st.session_state.rag_chunks
-        st.success("Knowledge Base Ready ✅")
+        st.markdown("---")
+        st.markdown("📚 **Knowledge Base Info**")
+        st.code(f"{len(rag_chunks)} Knowledge Segments")
+        st.success("RAG Engine Operational ✅")
 
     # RESTORED: Show Stats Toggle
     st.markdown("---")
@@ -87,13 +99,29 @@ st.markdown("<div class='hero-text'>AI Data Analyst Pro</div>", unsafe_allow_htm
 
 # RESTORED: Data Preview Section
 if dfs_dict:
-    with st.expander("📂 Raw Data Exploration"):
+    with st.expander("📂 Exploratory Data Analysis (Live)", expanded=True):
         for name, df in dfs_dict.items():
-            st.markdown(f"**Table: {name}**")
-            st.dataframe(df.head(10), use_container_width=True)
-            if show_stats:
-                st.markdown(f"*Statistical Insights for {name}:*")
-                st.table(df.describe())
+            st.markdown(f"#### 📊 {name} Overview")
+            
+            # Row 1: Key Stats
+            sc1, sc2, sc3 = st.columns(3)
+            with sc1:
+                st.metric("Total Rows", f"{len(df):,}")
+            with sc2:
+                missing = df.isnull().sum().sum()
+                st.metric("Missing Values", missing, delta=-missing, delta_color="inverse")
+            with sc3:
+                num_cols = len(df.select_dtypes(include=[np.number]).columns)
+                st.metric("Metrics Detected", num_cols)
+            
+            # Row 2: Correlation Heatmap (if multiple numeric cols)
+            numeric_df = df.select_dtypes(include=[np.number])
+            if len(numeric_df.columns) >= 2:
+                st.markdown("**Numerical Correlation Scan**")
+                corr = numeric_df.corr()
+                st.dataframe(corr.style.background_gradient(cmap='magma', axis=None), use_container_width=True)
+            
+            st.dataframe(df.head(5), use_container_width=True)
             st.markdown("---")
 
 # Point 1: History Visibility
@@ -173,27 +201,14 @@ if dfs_dict or rag_chunks:
             st.info(explanation)
             st.markdown("</div>", unsafe_allow_html=True)
             
-            # --- NEW: SYSTEM METRICS TILES (Not on top, in Col 2) ---
-            st.markdown("<div class='glass-card pulse-glow'>", unsafe_allow_html=True)
-            st.subheader("📡 System Pulse")
-            metrics = st.session_state.get("current_metrics", {"rows": 0, "chunks": 0, "engine": "Standby"})
-            
-            m_col1, m_col2 = st.columns(2)
-            with m_col1:
-                st.markdown(f"<div class='metric-tile'><div class='metric-value'>{metrics['rows']:,}</div><div class='metric-label'>Rows Scanned</div></div>", unsafe_allow_html=True)
-            with m_col2:
-                st.markdown(f"<div class='metric-tile'><div class='metric-value'>{metrics['chunks']}</div><div class='metric-label'>RAG Chunks</div></div>", unsafe_allow_html=True)
-            
-            st.markdown(f"<div class='metric-tile' style='margin-top: 10px;'><div class='metric-label'>Vector Engine</div><div class='metric-value' style='font-size: 18px;'>{metrics['engine']}</div></div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-
+            # --- UPDATED: ANALYTICS ENGINE LOGS ---
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.subheader("⚡ Neural Trace")
+            st.subheader("⚙️ Analysis Strategy")
             st.markdown("""
-            - 🔍 **Embedding Sequence**: transformers (MiniLM-L6) 
-            - 🧬 **Similarity search**: FAISS L2 Flat Index
-            - 🤖 **Reasoning**: Gemini Flash 1.5 Agent
-            - 📋 **Type Validation**: Strict Boolean/Float casting
+            - 🔍 **Logic**: Retrieval-Augmented Generation
+            - 🧬 **Engine**: FAISS L2 Search + transformers
+            - 🤖 **Reasoning**: Gemini Flash 1.5 PRO
+            - 📋 **Validation**: Semantic Type Casting
             """)
             st.markdown("</div>", unsafe_allow_html=True)
 
