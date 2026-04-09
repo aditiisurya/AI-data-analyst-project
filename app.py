@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import numpy as np
 from dotenv import load_dotenv
 
 # Load advanced components
@@ -106,13 +107,13 @@ if dfs_dict:
             # Row 1: Key Stats
             sc1, sc2, sc3 = st.columns(3)
             with sc1:
-                st.metric("Total Rows", f"{len(df):,}")
+                st.metric("Dimensions (Rows x Cols)", f"{df.shape[0]:,} x {df.shape[1]}")
             with sc2:
                 missing = df.isnull().sum().sum()
                 st.metric("Missing Values", missing, delta=-missing, delta_color="inverse")
             with sc3:
                 num_cols = len(df.select_dtypes(include=[np.number]).columns)
-                st.metric("Metrics Detected", num_cols)
+                st.metric("Numerical Features", num_cols)
             
             # Row 2: Correlation Heatmap (if multiple numeric cols)
             numeric_df = df.select_dtypes(include=[np.number])
