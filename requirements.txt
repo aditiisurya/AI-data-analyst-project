@@ -7,6 +7,7 @@ faiss-cpu
 sentence-transformers
 torch
 torchvision
+opencv-python-headless
 python-dotenv
 pypdf
 fpdf2
