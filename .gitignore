@@ -1,0 +1,21 @@
+# Python dependencies
+venv/
+.env
+__pycache__/
+*.py[cod]
+
+# Streamlit
+.streamlit/
+
+# Vector Store (Local copies)
+vector_store/
+faiss_index
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project data (Optional: exclude if you want to keep the repo clean)
+data/
+*.csv
+*.pdf
