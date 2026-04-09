@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 from analysis.data_analysis import analyze_data
 from utils.visualization import generate_chart
 from analysis.ai_explanation import explain_result
-from utils.krea_utils import generate_krea_illustration
 from utils.rag_helper import process_knowledge_base, retrieve_relevant_context, initialize_faiss_index
 from utils.pdf_generator import create_pdf_report
 
@@ -21,8 +20,18 @@ st.markdown("""
     .main { background: radial-gradient(circle at top right, #1a0b2e, #050505); color: #ffffff; }
     .glass-card { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; padding: 25px; margin-bottom: 20px; }
     .hero-text { background: linear-gradient(90deg, #FF0080 0%, #7928CA 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 44px; font-weight: 800; }
+    .metric-tile { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 15px; text-align: center; }
+    .metric-value { font-size: 24px; font-weight: 800; color: #FF0080; }
+    .metric-label { font-size: 11px; text-transform: uppercase; color: rgba(255,255,255,0.6); letter-spacing: 1px; }
+    .pulse-glow { box-shadow: 0 0 15px rgba(255, 0, 128, 0.2); }
 </style>
 """, unsafe_allow_html=True)
+
+def get_system_metrics(dfs_dict, rag_chunks):
+    total_rows = sum([len(df) for df in dfs_dict.values()]) if dfs_dict else 0
+    total_chunks = len(rag_chunks) if rag_chunks else 0
+    search_engine = "FAISS L2 Optimal" if total_chunks > 0 else "Pandas Normal"
+    return {"rows": total_rows, "chunks": total_chunks, "engine": search_engine}
 
 # --- MEMORY INITIALIZATION ---
 if "messages" not in st.session_state:
@@ -121,15 +130,18 @@ if dfs_dict or rag_chunks:
             st.write("💡 Drafting neural insights...")
             explanation = explain_result(result, query)
             
-            # 5. Art Assets
-            st.write("🎨 Styling assets...")
-            krea_info = generate_krea_illustration(query)
+            # 5. Remove legacy Art Assets
+            st.write("📊 Finalizing result matrix...")
+            # krea_info removed
             
             status.update(label="✨ Pulse Ready", state="complete", expanded=False)
 
         # Update Session State
         st.session_state.messages.append({"role": "user", "content": str(query)})
         st.session_state.messages.append({"role": "assistant", "content": str(explanation)})
+        
+        # Capture System State for Pulse
+        st.session_state.current_metrics = get_system_metrics(dfs_dict, rag_chunks)
 
         # --- DASHBOARD ---
         st.markdown("---")
@@ -161,12 +173,28 @@ if dfs_dict or rag_chunks:
             st.info(explanation)
             st.markdown("</div>", unsafe_allow_html=True)
             
+            # --- NEW: SYSTEM METRICS TILES (Not on top, in Col 2) ---
+            st.markdown("<div class='glass-card pulse-glow'>", unsafe_allow_html=True)
+            st.subheader("📡 System Pulse")
+            metrics = st.session_state.get("current_metrics", {"rows": 0, "chunks": 0, "engine": "Standby"})
+            
+            m_col1, m_col2 = st.columns(2)
+            with m_col1:
+                st.markdown(f"<div class='metric-tile'><div class='metric-value'>{metrics['rows']:,}</div><div class='metric-label'>Rows Scanned</div></div>", unsafe_allow_html=True)
+            with m_col2:
+                st.markdown(f"<div class='metric-tile'><div class='metric-value'>{metrics['chunks']}</div><div class='metric-label'>RAG Chunks</div></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"<div class='metric-tile' style='margin-top: 10px;'><div class='metric-label'>Vector Engine</div><div class='metric-value' style='font-size: 18px;'>{metrics['engine']}</div></div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.subheader("🖌️ AI Illustration")
-            if isinstance(krea_info, dict) and krea_info.get("status") == "ready":
-                st.image(krea_info["image_url"], use_container_width=True)
-            else:
-                st.caption("Illustration sequence pending.")
+            st.subheader("⚡ Neural Trace")
+            st.markdown("""
+            - 🔍 **Embedding Sequence**: transformers (MiniLM-L6) 
+            - 🧬 **Similarity search**: FAISS L2 Flat Index
+            - 🤖 **Reasoning**: Gemini Flash 1.5 Agent
+            - 📋 **Type Validation**: Strict Boolean/Float casting
+            """)
             st.markdown("</div>", unsafe_allow_html=True)
 
 else:
