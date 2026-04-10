@@ -58,6 +58,11 @@ with st.sidebar:
     st.subheader("📊 Datasets (CSV)")
     csv_files = st.file_uploader("Upload CSVs", type=["csv"], accept_multiple_files=True)
     
+    # --- NEW: DATASET DIMENSIONS (Sidebar Placement) ---
+    if "dfs_dict" in st.session_state:
+        for name, df in st.session_state.dfs_dict.items():
+            st.code(f"{name}\n{df.shape[0]:,} Rows | {df.shape[1]} Cols")
+    
     # Feature: Knowledge Base (RAG)
     st.subheader("📚 Knowledge Base (PDF)")
     kb_file = st.file_uploader("Upload PDF", type=["pdf"])
@@ -108,18 +113,10 @@ if dfs_dict:
         for name, df in dfs_dict.items():
             st.markdown(f"#### 📊 {name} Overview")
             
-            # Stage 1A: Key Stats (Only if the sidebar toggle is ON)
+            # Stage 1A: Statistical Summary (Mean, Median, etc.)
             if show_stats:
-                st.markdown("---")
-                sc1, sc2, sc3 = st.columns(3)
-                with sc1:
-                    st.metric("Dimensions", f"{df.shape[0]:,} x {df.shape[1]}")
-                with sc2:
-                    missing = df.isnull().sum().sum()
-                    st.metric("Missing Values", missing)
-                with sc3:
-                    num_cols = len(df.select_dtypes(include=[np.number]).columns)
-                    st.metric("Numerical Features", num_cols)
+                st.markdown("##### 📈 Numerical Distribution Summary")
+                st.dataframe(df.describe().T.style.background_gradient(cmap='Blues'), use_container_width=True)
                 st.markdown("---")
             
             # Row 2: Correlation Heatmap (if multiple numeric cols)
