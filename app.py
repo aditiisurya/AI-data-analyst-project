@@ -11,9 +11,15 @@ from analysis.ai_explanation import explain_result
 from utils.rag_helper import process_knowledge_base, retrieve_relevant_context, initialize_faiss_index
 from utils.pdf_generator import create_pdf_report
 
+# --- LOAD ENVIRONMENT ---
 load_dotenv()
 
-st.set_page_config(page_title="AI Data Analyst Pro", page_icon="🤖", layout="wide")
+# --- APP CONFIGURATION ---
+st.set_page_config(
+    page_title="AI Data Analyst Pro", 
+    page_icon="🤖", 
+    layout="wide"
+)
 
 # Theme CSS
 st.markdown("""
@@ -33,11 +39,13 @@ def get_system_metrics(dfs_dict, rag_chunks):
     file_count = len(dfs_dict) if dfs_dict else 0
     return {"rows": total_rows, "chunks": total_chunks, "files": file_count}
 
-# --- MEMORY INITIALIZATION ---
+# --- MEMORY & STATE MANAGEMENT ---
+# Initialize session state for conversation history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 def reset_memory():
+    """Clears the conversation and resets the app state."""
     st.session_state.messages = []
     st.rerun()
 
@@ -95,10 +103,12 @@ with st.sidebar:
     if st.button("🗑️ Reset Conversation Memory"):
         reset_memory()
 
-# --- MAIN ---
+# --- MAIN DASHBOARD SURFACE ---
 st.markdown("<div class='hero-text'>AI Data Analyst Pro</div>", unsafe_allow_html=True)
 
-# RESTORED: Data Preview Section
+# ---------------------------------------------------------
+# STAGE 1: Exploratory Data Analysis (EDA)
+# ---------------------------------------------------------
 if dfs_dict:
     with st.expander("📂 Exploratory Data Analysis (Live)", expanded=True):
         for name, df in dfs_dict.items():
@@ -131,6 +141,9 @@ if st.session_state.messages:
         for msg in st.session_state.messages:
             st.markdown(f"**{msg['role'].upper()}:** {msg['content'][:100]}...")
 
+# ---------------------------------------------------------
+# STAGE 2: Intelligence Input Loop
+# ---------------------------------------------------------
 if dfs_dict or rag_chunks:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     query = st.text_input("Ask a question about your data or knowledge base:", placeholder="e.g., 'Compare sales across files' or 'What is the refund policy?'")
