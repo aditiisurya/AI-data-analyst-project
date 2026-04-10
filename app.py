@@ -69,16 +69,6 @@ with st.sidebar:
         for f in csv_files:
             dfs_dict[f.name] = pd.read_csv(f)
         
-        # --- NEW: SIDEBAR DATA INVENTORY (Moved from main) ---
-        st.markdown("---")
-        st.markdown("📊 **Dataset Inventory**")
-        for name, df in dfs_dict.items():
-            st.code(f"{name}\n{df.shape[0]:,} Rows | {df.shape[1]} Cols")
-            if df.isnull().values.any():
-                st.caption("⚠️ Null values detected")
-            else:
-                st.caption("✅ Clean dataset")
-        st.success(f"{len(dfs_dict)} Table(s) Ready")
     
     if kb_file:
         # Only re-index if the file has changed or hasn't been indexed yet
@@ -109,7 +99,7 @@ st.markdown("<div class='hero-text'>AI Data Analyst Pro</div>", unsafe_allow_htm
 # ---------------------------------------------------------
 # STAGE 1: Exploratory Data Analysis (EDA)
 # ---------------------------------------------------------
-if dfs_dict:
+if dfs_dict and show_stats:
     with st.expander("📂 Exploratory Data Analysis (Live)", expanded=True):
         for name, df in dfs_dict.items():
             st.markdown(f"#### 📊 {name} Overview")
@@ -128,9 +118,10 @@ if dfs_dict:
             # Row 2: Correlation Heatmap (if multiple numeric cols)
             numeric_df = df.select_dtypes(include=[np.number])
             if len(numeric_df.columns) >= 2:
-                st.markdown("**Numerical Correlation Scan**")
-                corr = numeric_df.corr()
-                st.dataframe(corr.style.background_gradient(cmap='magma', axis=None), use_container_width=True)
+                if st.toggle(f"🧬 Activate Correlation Matrix ({name})", key=f"corr_{name}"):
+                    st.markdown("**Numerical Correlation Scan**")
+                    corr = numeric_df.corr()
+                    st.dataframe(corr.style.background_gradient(cmap='magma', axis=None), use_container_width=True)
             
             st.dataframe(df.head(5), use_container_width=True)
             st.markdown("---")
