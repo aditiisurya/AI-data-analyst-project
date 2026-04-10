@@ -62,24 +62,33 @@ with st.sidebar:
     st.subheader("📚 Knowledge Base (PDF)")
     kb_file = st.file_uploader("Upload PDF", type=["pdf"])
     
-    # Logic for file processing
+    # Feature: Reset Button
+    if st.button("🗑️ Reset Conversation Memory"):
+        reset_memory()
+
+# --- DATA PROCESSING LOGIC (Outside sidebar for better scoping) ---
+# Using session state to ensure data persists across toggle interactions
+rag_chunks = []
+if csv_files:
+    if "dfs_dict" not in st.session_state or len(st.session_state.dfs_dict) != len(csv_files):
+        st.session_state.dfs_dict = {f.name: pd.read_csv(f) for f in csv_files}
+    dfs_dict = st.session_state.dfs_dict
+else:
     dfs_dict = {}
-    rag_chunks = []
-    if csv_files:
-        for f in csv_files:
-            dfs_dict[f.name] = pd.read_csv(f)
-        
+    if "dfs_dict" in st.session_state:
+        del st.session_state.dfs_dict
+
+if kb_file:
+    # Only re-index if the file has changed or hasn't been indexed yet
+    if "rag_chunks" not in st.session_state or st.session_state.get("last_kb_file") != kb_file.name:
+        with st.spinner("Indexing PDF..."):
+            st.session_state.rag_chunks = process_knowledge_base(kb_file)
+            st.session_state.rag_index = initialize_faiss_index(st.session_state.rag_chunks)
+            st.session_state.last_kb_file = kb_file.name
     
-    if kb_file:
-        # Only re-index if the file has changed or hasn't been indexed yet
-        if "rag_chunks" not in st.session_state or st.session_state.get("last_kb_file") != kb_file.name:
-            with st.spinner("Indexing PDF..."):
-                st.session_state.rag_chunks = process_knowledge_base(kb_file)
-                st.session_state.rag_index = initialize_faiss_index(st.session_state.rag_chunks)
-                st.session_state.last_kb_file = kb_file.name
-        
-        # Use session state chunks
-        rag_chunks = st.session_state.rag_chunks
+    # Use session state chunks
+    rag_chunks = st.session_state.rag_chunks
+    with st.sidebar:
         st.markdown("---")
         st.markdown("📚 **Knowledge Base Info**")
         st.code(f"{len(rag_chunks)} Knowledge Segments")
@@ -106,15 +115,17 @@ if dfs_dict:
             
             # Stage 1A: Key Stats (Only if the sidebar toggle is ON)
             if show_stats:
+                st.markdown("---")
                 sc1, sc2, sc3 = st.columns(3)
                 with sc1:
-                    st.metric("Dimensions (Rows x Cols)", f"{df.shape[0]:,} x {df.shape[1]}")
+                    st.metric("Dimensions", f"{df.shape[0]:,} x {df.shape[1]}")
                 with sc2:
                     missing = df.isnull().sum().sum()
-                    st.metric("Missing Values", missing, delta=-missing, delta_color="inverse")
+                    st.metric("Missing Values", missing)
                 with sc3:
                     num_cols = len(df.select_dtypes(include=[np.number]).columns)
                     st.metric("Numerical Features", num_cols)
+                st.markdown("---")
             
             # Row 2: Correlation Heatmap (if multiple numeric cols)
             numeric_df = df.select_dtypes(include=[np.number])
