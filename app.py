@@ -62,7 +62,10 @@ with st.sidebar:
     st.subheader("📚 Knowledge Base (PDF)")
     kb_file = st.file_uploader("Upload PDF", type=["pdf"])
     
-    # Feature: Reset Button
+    # Sidebar Controls (Always available)
+    st.markdown("---")
+    show_stats = st.toggle("Show Statistical Summary", value=False)
+    
     if st.button("🗑️ Reset Conversation Memory"):
         reset_memory()
 
@@ -93,14 +96,6 @@ if kb_file:
         st.markdown("📚 **Knowledge Base Info**")
         st.code(f"{len(rag_chunks)} Knowledge Segments")
         st.success("RAG Engine Operational ✅")
-
-    # RESTORED: Show Stats Toggle
-    st.markdown("---")
-    show_stats = st.toggle("Show Statistical Summary", value=False)
-
-    # Feature: Reset Button
-    if st.button("🗑️ Reset Conversation Memory"):
-        reset_memory()
 
 # --- MAIN DASHBOARD SURFACE ---
 st.markdown("<div class='hero-text'>AI Data Analyst Pro</div>", unsafe_allow_html=True)
