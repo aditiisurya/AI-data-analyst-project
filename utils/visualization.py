@@ -1,3 +1,7 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
 def generate_chart(data):
     """
     Smarter visualization utility that chooses the best chart type based on the data structure.

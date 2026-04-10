@@ -5,18 +5,19 @@ import torch
 import faiss
 import numpy as np
 
-# Load the lightweight model globally for performance
-# Reusing the user's preferred model, forced to CPU for deployment stability
+# --- EMBEDDING MODEL SETUP ---
+# We use 'all-MiniLM-L6-v2', a lightweight and efficient model for sentence embeddings.
+# It is forced to CPU to ensure deployment stability on various environments.
 try:
     embed_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 except Exception as e:
-    # Minimal fallback initialization
     embed_model = None
     print(f"Warning: Could not initialize embedding model: {e}")
 
 def extract_text_from_pdf(pdf_file):
     """
-    Extracts raw text from an uploaded PDF.
+    Step 1: Raw Text Extraction.
+    Uses 'pypdf' to read through all pages of a PDF and concatenate text.
     """
     try:
         reader = PdfReader(pdf_file)
@@ -29,30 +30,31 @@ def extract_text_from_pdf(pdf_file):
 
 def chunk_text(text, chunk_size=500):
     """
-    Splits text into manageable chunks for RAG.
+    Step 2: Semantic Chunking.
+    Breaks large documents into smaller overlapping or fixed-size segments 
+    to fit within LLM context windows and improve retrieval accuracy.
     """
     if not text or len(text.strip()) == 0:
         return []
     words = text.split()
     chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
-    # Ensure all chunks are strings and non-empty
     return [str(c) for c in chunks if str(c).strip()]
 
 def initialize_faiss_index(chunks):
     """
-    Computes embeddings for chunks and returns a FAISS index.
+    Step 3: Vector Indexing (FAISS).
+    Turns text chunks into numerical vectors (embeddings) and stores them 
+    in a FAISS index for ultra-fast similarity searches.
     """
     if not chunks or embed_model is None:
         return None
     
     try:
-        # Sanitize chunks to prevent TypeError in newer transformers versions
         safe_chunks = [str(c) for c in chunks]
-        
-        # Pre-compute all embeddings
         embeddings = embed_model.encode(safe_chunks, convert_to_tensor=False)
         embeddings = np.array(embeddings).astype("float32")
         
+        # IndexFlatL2 uses Euclidean distance for similarity
         dimension = embeddings.shape[1]
         index = faiss.IndexFlatL2(dimension)
         index.add(embeddings)
@@ -64,23 +66,25 @@ def initialize_faiss_index(chunks):
 
 def retrieve_relevant_context(query, chunks, index=None, top_k=2):
     """
-    Finds the most relevant text chunks using similarity search.
-    Supports FAISS index for high-performance retrieval.
+    Step 4: Vector Retrieval.
+    Uses the FAISS index to find the 'top_k' most similar chunks to the query.
+    If no index is provided, it falls back to a slower dynamic semantic search.
     """
     if not chunks or embed_model is None:
         return ""
     
     try:
-        # 1. FAISS High-Speed Path
+        # Path A: High-Speed Index Search (Preferred)
         if index:
             query_emb = embed_model.encode([str(query)], convert_to_tensor=False)
             query_emb = np.array(query_emb).astype("float32")
             
             distances, indices = index.search(query_emb, top_k)
+            # Fetch the actual text for the indices returned by FAISS
             relevant_text = "\n\n".join([str(chunks[idx]) for idx in indices[0] if idx != -1 and idx < len(chunks)])
             return relevant_text
 
-        # 2. Legacy/Fallback Path (Dynamic encoding)
+        # Path B: Dynamic fallback (Direct comparison)
         query_emb = embed_model.encode(str(query), convert_to_tensor=True)
         safe_chunks = [str(c) for c in chunks]
         chunk_embs = embed_model.encode(safe_chunks, convert_to_tensor=True)
