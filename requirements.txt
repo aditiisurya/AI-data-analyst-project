@@ -16,3 +16,5 @@ requests
 numpy
 pillow
 google-generativeai
+openpyxl
+plotly
