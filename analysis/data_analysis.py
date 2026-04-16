@@ -1,3 +1,4 @@
+import re
 import pandas as pd
 import os
 import io
@@ -18,6 +19,20 @@ def get_analysis_model():
         return ChatGroq(model="llama-3.3-70b-versatile", groq_api_key=groq_key, temperature=0)
     return ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=gemini_key, temperature=0)
 
+def sanitize_variable_name(name):
+    """
+    Converts a filename into a valid Python identifier.
+    Example: 'StudentsPerformance (2).csv' -> 'StudentsPerformance_2_csv'
+    """
+    # Replace all non-alphanumeric characters with underscores
+    clean_name = re.sub(r'[^a-zA-Z0-9]', '_', name)
+    # Remove multiple underscores
+    clean_name = re.sub(r'_+', '_', clean_name).strip('_')
+    # Ensure it starts with a letter or underscore
+    if clean_name and clean_name[0].isdigit():
+        clean_name = "df_" + clean_name
+    return clean_name if clean_name else "dataset"
+
 llm = get_analysis_model()
 
 def generate_multi_data_profile(dfs_dict):
@@ -25,7 +40,7 @@ def generate_multi_data_profile(dfs_dict):
     Summarizes multiple datasets for the AI.
     """
     if not dfs_dict:
-        return "No CSV datasets uploaded."
+        return "No datasets uploaded."
         
     full_profile = []
     for filename, df in dfs_dict.items():
@@ -40,19 +55,14 @@ def generate_multi_data_profile(dfs_dict):
     return "\n\n".join(full_profile)
 
 def analyze_data(dfs_dict, query, rag_context="", history=""):
-    """
-    HYBRID INTELLIGENCE ENGINE with AGENTIC MEMORY:
-    - Recognizes CSV context and PDF (RAG) context.
-    - Utilizes 'history' to resolve multi-turn conversational queries.
-    """
-    
+
     data_profile = generate_multi_data_profile(dfs_dict)
     
     # Identify the variable names for the AI if data is available
     table_context = ""
     if dfs_dict:
         for filename in dfs_dict.keys():
-            safe_name = filename.replace(".", "_").replace(" ", "_")
+            safe_name = sanitize_variable_name(filename)
             table_context += f"- Access {filename} using the variable: {safe_name}\n"
 
     prompt = f"""
@@ -62,7 +72,7 @@ def analyze_data(dfs_dict, query, rag_context="", history=""):
     --- RECENT CONVERSATION HISTORY ---
     {history if history else "No previous history."}
 
-    --- AVAILABLE TABLES (CSV) ---
+    --- AVAILABLE TABLES ---
     {table_context}
     
     --- DATA PROFILES ---
@@ -77,7 +87,8 @@ def analyze_data(dfs_dict, query, rag_context="", history=""):
 
     1. IF DATA CALCULATION: Generate Python code using Pandas.
        - Return ONLY the code. No backticks.
-       - IMPORTANT: The variables (like {", ".join([f.replace(".", "_").replace(" ", "_") for f in dfs_dict.keys()]) if dfs_dict else "None"}) are ALREADY Pandas DataFrames.
+       - IMPORTANT: The variables (like {", ".join([sanitize_variable_name(f) for f in dfs_dict.keys()]) if dfs_dict else "None"}) are ALREADY Pandas DataFrames.
+       - **CROSS-DATASET QUERIES**: If the query asks for information spanning multiple tables, you MUST use `pd.merge()` on their common columns before calculating the final result.
        - IMPORTANT: When converting dates (e.g. 'Order Date'), ALWAYS use `pd.to_datetime(df['col'], dayfirst=True, errors='coerce')` to handle European/Varied formats correctly.
        - The result MUST be assigned to 'final_result'.
     2. IF DOCUMENT/KNOWLEDGE RETRIEVAL: Provide a clear, natural language answer based on the (PDF RAG) context.
@@ -94,7 +105,7 @@ def analyze_data(dfs_dict, query, rag_context="", history=""):
 
         # Handle Knowledge Base Direct Answers
         if generated_response.startswith("KB_ANSWER:"):
-            return generated_response.replace("KB_ANSWER:", "").strip()
+            return (generated_response.replace("KB_ANSWER:", "").strip(), "RAG_SEARCH")
 
         # Handle Data Calculation Code
         # Extract the code block if present, otherwise assume the whole response is code
@@ -109,20 +120,20 @@ def analyze_data(dfs_dict, query, rag_context="", history=""):
         namespace = {"pd": pd, "final_result": None}
         if dfs_dict:
             for filename, df in dfs_dict.items():
-                safe_name = filename.replace(".", "_").replace(" ", "_")
+                safe_name = sanitize_variable_name(filename)
                 namespace[safe_name] = df
 
         try:
             exec(clean_code, namespace)
-            return namespace.get('final_result', "No definitive data result produced.")
+            return (namespace.get('final_result', "No definitive data result produced."), clean_code)
         except Exception as exec_e:
             # If code execution fails, try to see if LLM produced a text-only answer despite instructions
             if "final_result" not in clean_code and len(generated_response) > 5:
-                return generated_response
+                return (generated_response, "TEXT_FALLBACK")
             raise exec_e
         
     except Exception as e:
-        return f"Intelligence Error: {str(e)} (Attempted Sequence: {generated_response[:200]}...)"
+        return (f"Intelligence Error: {str(e)} (Attempted Sequence: {generated_response[:200]}...)", "ERROR")
 
 def clean_llm_output(content):
     """

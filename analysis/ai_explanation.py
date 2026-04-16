@@ -29,9 +29,12 @@ def clean_llm_output(content):
         return content.get("text", str(content))
     return str(content)
 
+import json
+import re
+
 def explain_result(result, query):
     """
-    Provides a concise interpretation. 
+    Provides a structured interpretation. 
     Implements a fallback to Groq if Gemini quota is exceeded.
     """
     
@@ -40,15 +43,38 @@ def explain_result(result, query):
     Question: {query}
     Analysis Output: {result}
     
-    Task: Explain the key takeaway in 1-2 powerful sentences. 
-    Focus on the "why" or the most significant outlier/trend.
+    Task: Respond ONLY with a valid JSON object. No markdown formatting, no backticks.
+    The JSON object MUST contain exactly these three keys:
+    1. "neural_insight": Explain the key takeaway in 1-2 powerful sentences. Focus on the "why" or the most significant outlier/trend.
+    2. "business_insight": Provide 1 explicit Business Insight Recommendation based on the result.
+    3. "confidence_score": Provide a Confidence Score (e.g., "95%") evaluating how well the data answers the question.
     """
+
+    def parse_response(text):
+        text = clean_llm_output(text)
+        # Try to find JSON block
+        if "```json" in text:
+            text = text.split("```json")[-1].split("```")[0].strip()
+        elif "```" in text:
+            text = text.split("```")[-2].strip()
+            if text.startswith("json"):
+                text = text[4:].strip()
+                
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            # Fallback regex parsing if JSON fails
+            return {
+                "neural_insight": text,
+                "business_insight": "Insight could not be parsed structurally.",
+                "confidence_score": "N/A"
+            }
 
     # Try Primary (Gemini)
     try:
         llm = get_explanation_model()
         response = llm.invoke(prompt)
-        return clean_llm_output(response.content)
+        return parse_response(response.content)
     except Exception as e:
         # Fallback to Groq if available
         groq_key = os.getenv("GROQ_API_KEY")
@@ -60,8 +86,18 @@ def explain_result(result, query):
                     temperature=0.7
                 )
                 response = groq_llm.invoke(prompt)
-                return f"[Fallback to Groq] {clean_llm_output(response.content)}"
+                parsed = parse_response(response.content)
+                parsed["neural_insight"] = f"[Fallback to Groq] {parsed.get('neural_insight', '')}"
+                return parsed
             except Exception as ge:
-                return f"Could not generate explanation (Gemini error: {e}, Groq error: {ge})"
+                return {
+                    "neural_insight": f"Could not generate explanation (Gemini error: {e}, Groq error: {ge})",
+                    "business_insight": "Error",
+                    "confidence_score": "0%"
+                }
         
-        return f"Could not generate explanation (Gemini quota reached and no Groq key found): {e}"
+        return {
+            "neural_insight": f"Could not generate explanation (Gemini quota reached and no Groq key found): {e}",
+            "business_insight": "Error",
+            "confidence_score": "0%"
+        }
