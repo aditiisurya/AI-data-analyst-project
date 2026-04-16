@@ -8,7 +8,7 @@ class ReportPDF(FPDF):
     def header(self):
         self.set_font('Helvetica', 'B', 15)
         self.cell(80)
-        self.cell(30, 10, 'AI Data Analyst - Professional Report', 0, 0, 'C')
+        self.cell(30, 10, 'InsightAI - Professional Report', 0, 0, 'C')
         self.ln(20)
 
     def footer(self):
@@ -70,10 +70,20 @@ def create_pdf_report(query, result, explanation, chart_fig=None, history=[]):
     pdf.multi_cell(0, 8, txt=sanitize_text(query))
     
     pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(200, 8, txt="Neural Insights:", ln=True)
+    pdf.cell(200, 8, txt="Insights:", ln=True)
     pdf.set_font("Helvetica", size=11)
     pdf.set_text_color(255, 0, 128) # Professional Pink accent
-    pdf.multi_cell(0, 8, txt=sanitize_text(explanation))
+    
+    if isinstance(explanation, dict):
+        text_lines = []
+        text_lines.append(f"Neural Insight: {explanation.get('neural_insight', '')}")
+        text_lines.append(f"Business Insight: {explanation.get('business_insight', '')}")
+        text_lines.append(f"Confidence Score: {explanation.get('confidence_score', '')}")
+        combined_explanation = "\n".join(text_lines)
+    else:
+        combined_explanation = str(explanation)
+        
+    pdf.multi_cell(0, 8, txt=sanitize_text(combined_explanation))
     pdf.set_text_color(0, 0, 0) # Reset to black
     pdf.ln(5)
 
