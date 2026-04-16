@@ -270,7 +270,7 @@ if dfs_dict or rag_chunks:
                 cols = st.columns(3)
                 for j, chart_data in enumerate(charts[i:i+3]):
                     with cols[j]:
-                        st.plotly_chart(chart_data["fig"], use_container_width=True)
+                        st.plotly_chart(chart_data["fig"], use_container_width=True, key=f"auto_chart_{active_dataset_name}_{i}_{j}")
 
 else:
     st.markdown("<div class='glass-card' style='text-align: center; padding: 50px;'><h3>📶 SYSTEM READY</h3><p>Upload your dataset (CSV/XLSX/JSON) and PDF files separately in the sidebar to begin.</p></div>", unsafe_allow_html=True)
