@@ -118,7 +118,7 @@ with st.sidebar:
         reset_memory()
 
 # --- MAIN DASHBOARD SURFACE ---
-st.markdown("<div class='hero-text'>InsightAI – RAG Powered Data Analyst</div>", unsafe_allow_html=True)
+st.markdown("<div class='hero-text'>InsightAI – AI Powered Data Analyst</div>", unsafe_allow_html=True)
 
 if dfs_dict:
     # --- NEW: ACTIVE DATASET SELECTOR ---
