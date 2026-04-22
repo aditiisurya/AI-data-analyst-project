@@ -19,7 +19,7 @@ load_dotenv()
 
 # --- APP CONFIGURATION ---
 st.set_page_config(
-    page_title="InsightAI – RAG Powered Data Analyst", 
+    page_title="InsightAI – AI Powered Data Analyst", 
     page_icon="🤖", 
     layout="wide"
 )
