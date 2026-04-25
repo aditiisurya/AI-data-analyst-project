@@ -75,23 +75,11 @@ def analyze_data(dfs_dict, query, rag_context="", history=""):
     {rag_context if rag_context else "No relevant context found."}
 
     --- YOUR TASK ---
-    Based on the retrieved context (which contains relevant snippets from both documents and dataset rows), provide a comprehensive answer.
-    The dataset rows are presented as natural language descriptions. Use them to identify trends, specific values, or comparisons requested.
-
-    1. **Direct Answer**: Provide a clear, natural language explanation based on the context.
-    2. **Structured Insights**: Summarize the data points found in the retrieved context.
-    3. **Visualization Support**: If the answer can be visualized (e.g., comparing values or showing a trend), format a simple summary table as a CSV block prefixed with 'FINAL_DATA:'. 
-       - Keep it simple: 'Category,Value' or 'Metric,Value'.
-       - Use this ONLY if it helps visualize the core answer.
-       - Example:
-         FINAL_DATA:
-         Product,Revenue
-         Toyota,50000
-         Honda,45000
-
-    4. **Memory**: Use the conversation history to maintain context.
-
-    Respond in a professional, data-driven tone.
+    Based on the retrieved context (which contains relevant snippets from both documents and dataset rows), provide a concise and professional answer to the query.
+    
+    If the answer can be visualized (e.g., comparing values or showing a trend), you may optionally include a simple summary table as a CSV block prefixed with 'FINAL_DATA:'.
+    
+    Respond in a direct, data-driven tone. Do not use sections or numbered headings unless naturally required.
     """
 
     generated_response = ""
