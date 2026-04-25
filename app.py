@@ -251,17 +251,14 @@ if dfs_dict or rag_chunks:
         st.session_state.last_explanation = explanation_dict
         st.session_state.last_xai_report = xai_report
         st.session_state.last_query = query
-        # --- CONSTRUCT COMBINED VOICE RESPONSE ---
-        direct_answer = str(result) if not isinstance(result, (pd.DataFrame, pd.Series)) else "Analysis complete, data results are displayed on screen."
-        neural_insights = explanation_dict.get("neural_insight", "") if isinstance(explanation_dict, dict) else str(explanation_dict)
-        st.session_state.last_ai_response = f"Answer: {direct_answer}. Key Insight: {neural_insights}"
+        # --- RESTORE ORIGINAL RESPONSE STRUCTURE ---
+        st.session_state.last_ai_response = str(result) if not isinstance(result, (pd.DataFrame, pd.Series)) else explanation_dict.get("neural_insight", "")
         
-        formatted_explanation = str(explanation_dict)
-        if isinstance(explanation_dict, dict):
-            formatted_explanation = f"{explanation_dict.get('neural_insight', '')} (Confidence: {explanation_dict.get('confidence_score', '')})"
+        # Use the full AI result for the chat history
+        assistant_content = str(result) if not isinstance(result, (pd.DataFrame, pd.Series)) else explanation_dict.get("neural_insight", "")
         
         st.session_state.messages.append({"role": "user", "content": str(query)})
-        st.session_state.messages.append({"role": "assistant", "content": formatted_explanation})
+        st.session_state.messages.append({"role": "assistant", "content": assistant_content})
         
         st.session_state.current_metrics = get_system_metrics(active_dfs_dict, rag_chunks)
 
