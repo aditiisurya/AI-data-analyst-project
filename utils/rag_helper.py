@@ -81,7 +81,7 @@ def convert_df_to_text(df):
     
     return df.apply(format_row, axis=1).tolist()
 
-def retrieve_relevant_context(query, chunks, index=None, top_k=10):
+def retrieve_relevant_context(query, chunks, index=None, top_k=50):
     """
     Step 4: Vector Retrieval.
     Uses the FAISS index to find the 'top_k' most similar chunks to the query.
