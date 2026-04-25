@@ -8,14 +8,21 @@ from dotenv import load_dotenv
 from analysis.data_analysis import analyze_data
 from utils.visualization import generate_chart
 from analysis.ai_explanation import explain_result
-from utils.rag_helper import process_knowledge_base, retrieve_relevant_context, initialize_faiss_index
+from utils.rag_helper import process_knowledge_base, retrieve_relevant_context, initialize_faiss_index, convert_df_to_text
 from utils.pdf_generator import create_pdf_report
 from analysis.preprocessing import run_preprocessing_pipeline
 from utils.auto_visualization import generate_auto_charts
 from analysis.xai import generate_xai_report
+from utils.tts_helper import generate_voice_response
 
 # --- LOAD ENVIRONMENT ---
 load_dotenv()
+
+# --- GLOBAL STATE INITIALIZATION ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "prep_reports" not in st.session_state:
+    st.session_state.prep_reports = {}
 
 # --- APP CONFIGURATION ---
 st.set_page_config(
@@ -42,6 +49,19 @@ def get_system_metrics(dfs_dict, rag_chunks):
     file_count = len(dfs_dict) if dfs_dict else 0
     return {"rows": total_rows, "chunks": total_chunks, "files": file_count}
 
+def format_result_for_tts(result):
+    """Converts the analysis result into a human-readable string for TTS."""
+    if isinstance(result, pd.DataFrame):
+        return f"The result is a table with {result.shape[0]} rows and {result.shape[1]} columns."
+    elif isinstance(result, pd.Series):
+        return f"The result is a data series with {len(result)} entries."
+    elif isinstance(result, (int, float, np.number)):
+        return f"The calculated value is {result}."
+    elif isinstance(result, str):
+        return result
+    else:
+        return str(result)
+
 # --- MEMORY & STATE MANAGEMENT ---
 # Initialize session state for conversation history
 if "messages" not in st.session_state:
@@ -50,6 +70,10 @@ if "messages" not in st.session_state:
 def reset_memory():
     """Clears the conversation and resets the app state."""
     st.session_state.messages = []
+    st.session_state.last_result = None
+    st.session_state.last_explanation = None
+    st.session_state.last_xai_report = None
+    st.session_state.last_query = None
     st.rerun()
 
 # --- SIDEBAR ---
@@ -95,21 +119,58 @@ with st.sidebar:
     st.subheader("📚 Knowledge Base (PDF)")
     kb_file = st.file_uploader("Upload PDF", type=["pdf"])
 
+# --- CONSOLIDATED RAG INDEXING ---
+if "rag_chunks" not in st.session_state:
+    st.session_state.rag_chunks = []
+
+all_current_chunks = []
+
+# 1. Process PDF if uploaded
 if kb_file:
-    # Only re-index if the file has changed or hasn't been indexed yet
-    if "rag_chunks" not in st.session_state or st.session_state.get("last_kb_file") != kb_file.name:
-        with st.spinner("Indexing PDF..."):
-            st.session_state.rag_chunks = process_knowledge_base(kb_file)
-            st.session_state.rag_index = initialize_faiss_index(st.session_state.rag_chunks)
+    if "pdf_chunks" not in st.session_state or st.session_state.get("last_kb_file") != kb_file.name:
+        with st.spinner("Indexing PDF Knowledge..."):
+            st.session_state.pdf_chunks = process_knowledge_base(kb_file)
             st.session_state.last_kb_file = kb_file.name
-    
-    # Use session state chunks
-    rag_chunks = st.session_state.rag_chunks
+    all_current_chunks.extend(st.session_state.get("pdf_chunks", []))
+
+# 2. Process CSV/XLSX/JSON Datasets if uploaded
+if dfs_dict:
+    # Use a simple key-based hash to detect changes in uploaded file list
+    current_dfs_id = "-".join(sorted(dfs_dict.keys()))
+    if "csv_chunks" not in st.session_state or st.session_state.get("last_dfs_id") != current_dfs_id:
+        with st.spinner("Indexing Structured Data Rows..."):
+            combined_csv_chunks = []
+            for name, df in dfs_dict.items():
+                combined_csv_chunks.extend(convert_df_to_text(df))
+            st.session_state.csv_chunks = combined_csv_chunks
+            st.session_state.last_dfs_id = current_dfs_id
+    all_current_chunks.extend(st.session_state.get("csv_chunks", []))
+
+# 3. Update Global FAISS Index if chunks have changed
+if all_current_chunks:
+    # We compare lengths as a simple proxy for change, or just re-index if state is missing
+    if "rag_index" not in st.session_state or len(st.session_state.rag_chunks) != len(all_current_chunks):
+        with st.spinner("Synchronizing Vector Database..."):
+            st.session_state.rag_chunks = all_current_chunks
+            st.session_state.rag_index = initialize_faiss_index(all_current_chunks)
+
+rag_chunks = st.session_state.get("rag_chunks", [])
+if rag_chunks:
     with st.sidebar:
         st.markdown("---")
-        st.markdown("📚 **Knowledge Base Info**")
-        st.code(f"{len(rag_chunks)} Knowledge Segments")
-        st.success("RAG Engine Operational ✅")
+        st.markdown("🧬 **Unified RAG Engine**")
+        
+        # Hardware Indicator
+        import torch
+        device_name = "🚀 NVIDIA GPU (CUDA)" if torch.cuda.is_available() else "🐌 CPU (Limited Speed)"
+        st.info(f"**Device:** {device_name}")
+        
+        st.code(f"{len(rag_chunks)} Total Segments\n(Structured + PDF)")
+        
+        if len(rag_chunks) > 5000:
+            st.warning("⚠️ Large dataset detected. Initial indexing may take up to 60 seconds.")
+            
+        st.success("Indexing Synchronized ✅")
 
 with st.sidebar:
     # Sidebar Controls (Always available)
@@ -173,6 +234,10 @@ if dfs_dict or rag_chunks:
             with st.spinner("🧹 Running Automated Preprocessing..."):
                 active_dfs_dict, prep_reports = run_preprocessing_pipeline(dfs_dict)
                 st.session_state.last_prep_reports = prep_reports
+                st.session_state.prep_reports = prep_reports
+        else:
+            prep_reports = {}
+            st.session_state.prep_reports = {}
 
         with st.status("🔮 Processing with Agentic Memory...", expanded=True) as status:
             st.write("📖 Contextualizing Knowledge...")
@@ -194,6 +259,18 @@ if dfs_dict or rag_chunks:
             st.write("📊 Finalizing result matrix...")
             status.update(label="✨ Pulse Ready", state="complete", expanded=False)
 
+        # --- PERSIST RESULTS IN SESSION STATE ---
+        st.session_state.last_result = result
+        st.session_state.last_explanation = explanation_dict
+        st.session_state.last_xai_report = xai_report
+        st.session_state.last_query = query
+        
+        # Prepare combined voice response: Result + Neural Insights
+        result_text = format_result_for_tts(result)
+        neural_insights = explanation_dict.get("neural_insight", "") if isinstance(explanation_dict, dict) else str(explanation_dict)
+        combined_voice_text = f"Here is the analysis result. {result_text}. Key insights from the analysis are: {neural_insights}"
+        st.session_state.last_ai_response = combined_voice_text
+        
         formatted_explanation = str(explanation_dict)
         if isinstance(explanation_dict, dict):
             formatted_explanation = f"{explanation_dict.get('neural_insight', '')} (Confidence: {explanation_dict.get('confidence_score', '')})"
@@ -203,6 +280,14 @@ if dfs_dict or rag_chunks:
         
         st.session_state.current_metrics = get_system_metrics(active_dfs_dict, rag_chunks)
 
+    # --- RENDER PERSISTED RESULTS ---
+    if "last_result" in st.session_state and st.session_state.last_result is not None:
+        result = st.session_state.last_result
+        explanation_dict = st.session_state.last_explanation
+        xai_report = st.session_state.last_xai_report
+        query = st.session_state.last_query
+        fig = generate_chart(result) # Regenerate figure for rendering
+        
         st.markdown("---")
         out_col1, out_col2 = st.columns([1.5, 1], gap="large")
         
@@ -230,6 +315,23 @@ if dfs_dict or rag_chunks:
             st.subheader("🧠 Neural Insights")
             if isinstance(explanation_dict, dict):
                 st.info(explanation_dict.get("neural_insight", ""))
+                
+                # --- FIXED: VOICE RESPONSE USING SESSION STATE ---
+                if st.button("🔊 Play Voice Response"):
+                    voice_text = st.session_state.get("last_ai_response")
+                    if voice_text:
+                        if "current_audio" not in st.session_state or st.session_state.get("last_voiced_insight") != voice_text:
+                            with st.spinner("🗣️ Generating Voice Narration..."):
+                                result_data = generate_voice_response(voice_text)
+                                if isinstance(result_data, bytes):
+                                    st.session_state.current_audio = result_data
+                                    st.session_state.last_voiced_insight = voice_text
+                                else:
+                                    st.error(f"TTS Error: {result_data}")
+                        
+                        if "current_audio" in st.session_state:
+                            st.audio(st.session_state.current_audio, format="audio/mp3")
+
                 st.markdown("**💡 Business Recommendation:**")
                 st.success(explanation_dict.get("business_insight", ""))
                 st.markdown(f"**🎯 Confidence Score:** `{explanation_dict.get('confidence_score', '')}`")
@@ -242,6 +344,8 @@ if dfs_dict or rag_chunks:
             st.markdown(xai_report)
             st.markdown("</div>", unsafe_allow_html=True)
             
+            # --- RENDER PREPROCESSING REPORTS ---
+            prep_reports = st.session_state.get("prep_reports", {})
             if prep_reports:
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
                 st.subheader("🧹 Preprocessing Report")
