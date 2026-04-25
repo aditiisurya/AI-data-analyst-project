@@ -15,7 +15,7 @@ def get_analysis_model():
     groq_key = os.getenv("GROQ_API_KEY")
     gemini_key = os.getenv("GOOGLE_API_KEY")
     
-    if groq_key and groq_key != "your_groq_key_here":
+    if groq_key and groq_key != "GROQ_API_KEY":
         return ChatGroq(model="llama-3.3-70b-versatile", groq_api_key=groq_key, temperature=0)
     return ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=gemini_key, temperature=0)
 
@@ -55,47 +55,43 @@ def generate_multi_data_profile(dfs_dict):
     return "\n\n".join(full_profile)
 
 def analyze_data(dfs_dict, query, rag_context="", history=""):
-
-    data_profile = generate_multi_data_profile(dfs_dict)
+    """
+    Unified RAG-based analysis engine. 
+    Processes both structured data (via retrieved rows) and unstructured data (PDFs).
+    """
     
-    # Identify the variable names for the AI if data is available
-    table_context = ""
-    if dfs_dict:
-        for filename in dfs_dict.keys():
-            safe_name = sanitize_variable_name(filename)
-            table_context += f"- Access {filename} using the variable: {safe_name}\n"
-
+    # We maintain the function signature and return format for compatibility with app.py.
+    # final_result is mapped to the 'result' return value.
+    # insights is mapped to the 'executed_code' return value (as a status flag).
+    
     prompt = f"""
-    You are a Hybrid AI Intelligence Agent with memory. 
+    You are a Professional AI Data Analyst. 
     Analyze the question: "{query}"
 
     --- RECENT CONVERSATION HISTORY ---
     {history if history else "No previous history."}
 
-    --- AVAILABLE TABLES ---
-    {table_context}
-    
-    --- DATA PROFILES ---
-    {data_profile}
-
-    --- KNOWLEDGE BASE CONTEXT (PDF RAG) ---
-    {rag_context}
+    --- KNOWLEDGE BASE & DATA CONTEXT (RAG RETRIEVAL) ---
+    {rag_context if rag_context else "No relevant context found."}
 
     --- YOUR TASK ---
-    Decide if this is a "Data Calculation" query or a "Direct Knowledge Retrieval" query.
-    USE THE HISTORY to resolve pronouns (it, that, previous) or context.
+    Based on the retrieved context (which contains relevant snippets from both documents and dataset rows), provide a comprehensive answer.
+    The dataset rows are presented as natural language descriptions. Use them to identify trends, specific values, or comparisons requested.
 
-    1. IF DATA CALCULATION: Generate Python code using Pandas.
-       - Return ONLY the code. No backticks.
-       - IMPORTANT: The variables (like {", ".join([sanitize_variable_name(f) for f in dfs_dict.keys()]) if dfs_dict else "None"}) are ALREADY Pandas DataFrames.
-       - **CROSS-DATASET QUERIES**: If the query asks for information spanning multiple tables, you MUST use `pd.merge()` on their common columns before calculating the final result.
-       - IMPORTANT: When converting dates (e.g. 'Order Date'), ALWAYS use `pd.to_datetime(df['col'], dayfirst=True, errors='coerce')` to handle European/Varied formats correctly.
-       - The result MUST be assigned to 'final_result'.
-    2. IF DOCUMENT/KNOWLEDGE RETRIEVAL: Provide a clear, natural language answer based on the (PDF RAG) context.
-       - Start your response with the prefix: "KB_ANSWER: "
-    3. IF BOTH/FOLLOW-UP: Use history to build on previous results.
+    1. **Direct Answer**: Provide a clear, natural language explanation based on the context.
+    2. **Structured Insights**: Summarize the data points found in the retrieved context.
+    3. **Visualization Support**: If the answer can be visualized (e.g., comparing values or showing a trend), format a simple summary table as a CSV block prefixed with 'FINAL_DATA:'. 
+       - Keep it simple: 'Category,Value' or 'Metric,Value'.
+       - Use this ONLY if it helps visualize the core answer.
+       - Example:
+         FINAL_DATA:
+         Product,Revenue
+         Toyota,50000
+         Honda,45000
 
-    Data Goal: {query}
+    4. **Memory**: Use the conversation history to maintain context.
+
+    Respond in a professional, data-driven tone.
     """
 
     generated_response = ""
@@ -103,37 +99,27 @@ def analyze_data(dfs_dict, query, rag_context="", history=""):
         response = llm.invoke(prompt)
         generated_response = clean_llm_output(response.content).strip()
 
-        # Handle Knowledge Base Direct Answers
-        if generated_response.startswith("KB_ANSWER:"):
-            return (generated_response.replace("KB_ANSWER:", "").strip(), "RAG_SEARCH")
+        # Handle Structured Data for Charts
+        if "FINAL_DATA:" in generated_response:
+            parts = generated_response.split("FINAL_DATA:")
+            text_answer = parts[0].strip()
+            data_str = parts[1].strip()
+            
+            # Clean up potential markdown backticks in data_str
+            data_str = data_str.replace("```csv", "").replace("```", "").strip()
+            
+            try:
+                # Convert the CSV string to a DataFrame for visualization
+                df_result = pd.read_csv(io.StringIO(data_str))
+                # The dashboard uses df_result for charts and text_answer for insights
+                return (df_result, "RAG_SEARCH")
+            except Exception:
+                return (generated_response, "RAG_SEARCH")
 
-        # Handle Data Calculation Code
-        # Extract the code block if present, otherwise assume the whole response is code
-        if "```" in generated_response:
-            clean_code = generated_response.split("```")[-2]
-            if clean_code.startswith("python"):
-                clean_code = clean_code[6:].strip()
-        else:
-            clean_code = generated_response.strip()
-        
-        # Prepare execution namespace
-        namespace = {"pd": pd, "final_result": None}
-        if dfs_dict:
-            for filename, df in dfs_dict.items():
-                safe_name = sanitize_variable_name(filename)
-                namespace[safe_name] = df
-
-        try:
-            exec(clean_code, namespace)
-            return (namespace.get('final_result', "No definitive data result produced."), clean_code)
-        except Exception as exec_e:
-            # If code execution fails, try to see if LLM produced a text-only answer despite instructions
-            if "final_result" not in clean_code and len(generated_response) > 5:
-                return (generated_response, "TEXT_FALLBACK")
-            raise exec_e
+        return (generated_response, "RAG_SEARCH")
         
     except Exception as e:
-        return (f"Intelligence Error: {str(e)} (Attempted Sequence: {generated_response[:200]}...)", "ERROR")
+        return (f"Intelligence Error: {str(e)}", "ERROR")
 
 def clean_llm_output(content):
     """
