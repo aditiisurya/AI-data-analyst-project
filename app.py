@@ -49,19 +49,6 @@ def get_system_metrics(dfs_dict, rag_chunks):
     file_count = len(dfs_dict) if dfs_dict else 0
     return {"rows": total_rows, "chunks": total_chunks, "files": file_count}
 
-def format_result_for_tts(result):
-    """Converts the analysis result into a human-readable string for TTS."""
-    if isinstance(result, pd.DataFrame):
-        return f"The result is a table with {result.shape[0]} rows and {result.shape[1]} columns."
-    elif isinstance(result, pd.Series):
-        return f"The result is a data series with {len(result)} entries."
-    elif isinstance(result, (int, float, np.number)):
-        return f"The calculated value is {result}."
-    elif isinstance(result, str):
-        return result
-    else:
-        return str(result)
-
 # --- MEMORY & STATE MANAGEMENT ---
 # Initialize session state for conversation history
 if "messages" not in st.session_state:
@@ -264,12 +251,10 @@ if dfs_dict or rag_chunks:
         st.session_state.last_explanation = explanation_dict
         st.session_state.last_xai_report = xai_report
         st.session_state.last_query = query
-        
-        # Prepare combined voice response: Result + Neural Insights
-        result_text = format_result_for_tts(result)
+        # --- CONSTRUCT COMBINED VOICE RESPONSE ---
+        direct_answer = str(result) if not isinstance(result, (pd.DataFrame, pd.Series)) else "Analysis complete, data results are displayed on screen."
         neural_insights = explanation_dict.get("neural_insight", "") if isinstance(explanation_dict, dict) else str(explanation_dict)
-        combined_voice_text = f"Here is the analysis result. {result_text}. Key insights from the analysis are: {neural_insights}"
-        st.session_state.last_ai_response = combined_voice_text
+        st.session_state.last_ai_response = f"Answer: {direct_answer}. Key Insight: {neural_insights}"
         
         formatted_explanation = str(explanation_dict)
         if isinstance(explanation_dict, dict):
@@ -317,7 +302,7 @@ if dfs_dict or rag_chunks:
                 st.info(explanation_dict.get("neural_insight", ""))
                 
                 # --- FIXED: VOICE RESPONSE USING SESSION STATE ---
-                if st.button("🔊 Play Voice Response"):
+                if st.button("🔊 Play Voice Response", key="play_voice_btn"):
                     voice_text = st.session_state.get("last_ai_response")
                     if voice_text:
                         if "current_audio" not in st.session_state or st.session_state.get("last_voiced_insight") != voice_text:
